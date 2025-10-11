@@ -1439,6 +1439,15 @@ Uint32 Screen_GetGenConvHeight(void)
 	return STScreenRect.h;
 }
 
+/**
+ * Wrapper for Statusbar_AddMessage() and Statusbar_Update() in one go.
+ */
+void Screen_StatusbarMessage(const char *msg, uint32_t msecs)
+{
+	Statusbar_AddMessage(msg, msecs);
+	Statusbar_Update(sdlscrn, true);
+}
+
 
 /* -------------- screen conversion routines --------------------------------
   Screen conversion routines. We have a number of routines to convert ST screen
