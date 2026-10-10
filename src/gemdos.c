@@ -167,6 +167,15 @@ static uint32_t CallingPC;    /* Program counter from caller */
 
 static uint32_t nSavedPexecParams;
 
+/* A drive's current path, as it was before a program first set it, for
+ * that program's termination to put back (GemDOS_SaveCurPath) */
+static struct {
+	uint32_t Basepage;
+	int Drive;	/* index into emudrives */
+	char Path[FILENAME_MAX];
+} SavedPaths[32];
+static int nSavedPaths;
+
 #if defined(WIN32) && !defined(mkdir)
 #define mkdir(name,mode) mkdir(name)
 #endif  /* WIN32 */
@@ -548,6 +557,7 @@ static void GemDOS_InitCurPaths(void)
 {
 	int i;
 
+	nSavedPaths = 0;
 	if (emudrives)
 	{
 		for (i = 0; i < MAX_HARDDRIVES; i++)
@@ -963,6 +973,8 @@ void GemDOS_MemorySnapShot_Capture(bool bSave)
 	MemorySnapShot_Store(&CurrentDrive, sizeof(CurrentDrive));
 
 	MemorySnapShot_Store(&nSavedPexecParams, sizeof(nSavedPexecParams));
+	if (!bSave)
+		nSavedPaths = 0;	/* not in snapshots */
 
 	/* File handle related information */
 	MemorySnapShot_Store(&ForcedHandles, sizeof(ForcedHandles));
@@ -1860,6 +1872,75 @@ static bool GemDOS_RmDir(uint32_t Params)
 
 /*-----------------------------------------------------------------------*/
 /**
+ * Each program's current paths are its own, as they are in TOS, so
+ * that one (an AUTO folder program, say) cannot leave its parent in another
+ * folder. The current program is about to set a drive's path: the first
+ * time, save what it was, for its termination to put back.
+ */
+static void GemDOS_SaveCurPath(int drive)
+{
+	uint32_t current;
+	int i;
+
+	if (!act_pd)
+		return;
+	current = STMemory_ReadLong(act_pd);
+	for (i = 0; i < nSavedPaths; i++)
+	{
+		if (SavedPaths[i].Basepage == current && SavedPaths[i].Drive == drive)
+			return;
+	}
+	if (nSavedPaths == ARRAY_SIZE(SavedPaths))
+	{
+		Log_Printf(LOG_WARN, "Too many current paths to keep: program 0x%x's will stay after its exit.\n",
+			   current);
+		return;
+	}
+	SavedPaths[nSavedPaths].Basepage = current;
+	SavedPaths[nSavedPaths].Drive = drive;
+	Str_Copy(SavedPaths[nSavedPaths].Path, emudrives[drive]->fs_currpath,
+	         sizeof(SavedPaths[nSavedPaths].Path));
+	nSavedPaths++;
+}
+
+/**
+ * The current program is ending: put back the paths it set. Those
+ * saved for programs that are not it or its parents go too: those ended
+ * without telling GEMDOS, or never will (accessories), and their paths
+ * stay, as they always did.
+ */
+static void GemDOS_RestoreCurPaths(void)
+{
+	uint32_t current = STMemory_ReadLong(act_pd);
+	int i, kept = 0;
+
+	for (i = 0; i < nSavedPaths; i++)
+	{
+		int drive = SavedPaths[i].Drive;
+
+		if (SavedPaths[i].Basepage == current)
+		{
+			if (emudrives && emudrives[drive])
+			{
+				LOG_TRACE(TRACE_OS_GEMDOS, "GEMDOS: program 0x%x ended: current path on %c: back to %s\n",
+				          current, 'A' + emudrives[drive]->drive_number, SavedPaths[i].Path);
+				Str_Copy(emudrives[drive]->fs_currpath, SavedPaths[i].Path,
+				         sizeof(emudrives[drive]->fs_currpath));
+			}
+		}
+		else if (GemDOS_BasepageMatches(SavedPaths[i].Basepage))
+		{
+			if (kept != i)
+				SavedPaths[kept] = SavedPaths[i];
+			kept++;
+		}
+	}
+	nSavedPaths = kept;
+}
+
+
+/*-----------------------------------------------------------------------*/
+/**
  * GEMDOS ChDir
  * Call 0x3B
  */
@@ -1926,6 +2007,7 @@ static bool GemDOS_ChDir(uint32_t Params)
 	if (strncmp(psTempDirPath, emudrives[Drive-2]->hd_emulation_dir,
 		    strlen(emudrives[Drive-2]->hd_emulation_dir)) == 0)
 	{
+		GemDOS_SaveCurPath(Drive-2);
 		Str_Copy(emudrives[Drive-2]->fs_currpath, psTempDirPath,
 		         sizeof(emudrives[Drive-2]->fs_currpath));
 		Regs[REG_D0] = GEMDOS_EOK;
@@ -3323,6 +3405,8 @@ static void GemDOS_TerminateClose(void)
 {
 	int i, closed, unforced;
 	uint32_t current = STMemory_ReadLong(act_pd);
+
+	GemDOS_RestoreCurPaths();
 
 	closed = 0;
 	for (i = 0; i < ARRAY_SIZE(FileHandles); i++)
