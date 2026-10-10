@@ -353,7 +353,9 @@ void Main_WaitOnVbl(void)
 	{
 		/* show VBLs/s */
 		Main_PauseEmulation(true);
-		exit(0);
+		/* quit as from the window, so recordings are finished */
+		Main_SetQuitValue(0);
+		return;
 	}
 
 //	FrameDuration_micro = (int64_t) ( 1000000.0 / nScreenRefreshRate + 0.5 );	/* round to closest integer */
