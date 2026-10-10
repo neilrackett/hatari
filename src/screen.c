@@ -31,6 +31,7 @@ const char Screen_fileid[] = "Hatari screen.c";
 #include <assert.h>
 
 #include "main.h"
+#include "version.h"
 #include "configuration.h"
 #include "avi_record.h"
 #include "file.h"
@@ -478,7 +479,7 @@ static bool Screen_SetSDLVideoSize(int width, int height, bool bForceChange)
 	}
 	else
 	{
-		sdlWindow = SDL_CreateWindow("Hatari", SDL_WINDOWPOS_UNDEFINED,
+		sdlWindow = SDL_CreateWindow("EmuMD - " PROG_NAME, SDL_WINDOWPOS_UNDEFINED,
 		                             SDL_WINDOWPOS_UNDEFINED,
 		                             win_width, win_height, sdlVideoFlags);
 		if (!sdlWindow)

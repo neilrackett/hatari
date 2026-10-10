@@ -754,7 +754,7 @@ void Main_SetTitle(const char *title)
 	if (title)
 		SDL_SetWindowTitle(sdlWindow, title);
 	else
-		SDL_SetWindowTitle(sdlWindow, PROG_NAME);
+		SDL_SetWindowTitle(sdlWindow, "EmuMD - " PROG_NAME);
 }
 
 /*-----------------------------------------------------------------------*/
