@@ -155,6 +155,23 @@ static bool Control_InsertEvent(const char *event)
 		Keyboard.LButtonDblClk = 1;
 		return true;
 	}
+	if (strcmp(event, "leftdown") == 0) {
+		Keyboard.bLButtonDown |= BUTTON_MOUSE;
+		return true;
+	}
+	if (strcmp(event, "leftup") == 0) {
+		Keyboard.bLButtonDown &= ~BUTTON_MOUSE;
+		return true;
+	}
+	if (strncmp(event, "mousemove ", 10) == 0) {
+		/* in ST pixels, added to host mouse motion */
+		int dx, dy;
+		if (sscanf(event + 10, "%d %d", &dx, &dy) == 2) {
+			KeyboardProcessor.Mouse.dx += dx;
+			KeyboardProcessor.Mouse.dy += dy;
+			return true;
+		}
+	}
 	if (strcmp(event, "rightdown") == 0) {
 		Keyboard.bRButtonDown |= BUTTON_MOUSE;
 		return true;
@@ -170,8 +187,11 @@ static bool Control_InsertEvent(const char *event)
 	fprintf(stderr,
 		"Supported mouse button and key events are:\n"
 		"- doubleclick\n"
+		"- leftdown\n"
+		"- leftup\n"
 		"- rightdown\n"
 		"- rightup\n"
+		"- mousemove <dx> <dy>\n"
 		"- keypress <key>\n"
 		"- keydown <key>\n"
 		"- keyup <key>\n"
