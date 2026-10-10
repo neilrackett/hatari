@@ -13,6 +13,7 @@ const char Main_fileid[] = "Hatari main.c";
 #include <SDL.h>
 
 #include "main.h"
+#include "multidevice.h"
 #include "version.h"
 #include "configuration.h"
 #include "control.h"
@@ -862,6 +863,7 @@ static void Main_Init(void)
  */
 static void Main_UnInit(void)
 {
+	MultiDevice_UnInit();
 	Screen_ReturnFromFullScreen();
 	Floppy_UnInit();
 	HDC_UnInit();

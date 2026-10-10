@@ -52,6 +52,17 @@ typedef struct
 } CNF_ROM;
 
 
+/* SidecarTridge Multi-device configuration (firmware built with EmuMD) */
+typedef struct
+{
+  bool bEnabled;
+  bool bVerbose;
+  char szFirmwareFileName[FILENAME_MAX];
+  char szSdCardDirectory[FILENAME_MAX];
+  char szOptions[FILENAME_MAX];		/* key=value pairs separated by ';' */
+} CNF_MULTIDEVICE;
+
+
 /* LILO (Linux loader) configuration */
 typedef struct
 {
@@ -432,6 +443,7 @@ typedef struct
   CNF_SCSIDEV Scsi[MAX_SCSI_DEVS];
   CNF_IDEDEV Ide[MAX_IDE_DEVS];
   CNF_ROM Rom;
+  CNF_MULTIDEVICE MultiDevice;
   CNF_LILO Lilo;
   CNF_RS232 RS232;
   CNF_PRINTER Printer;

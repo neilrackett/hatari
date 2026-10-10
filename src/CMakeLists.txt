@@ -5,7 +5,7 @@ set(SOURCES
 	cycInt.c cycles.c dialog.c dmaSnd.c fdc.c file.c floppy.c
 	floppy_ipf.c floppy_stx.c gemdos.c hdc.c ide.c ikbd.c
 	ioMem.c ioMemTabST.c ioMemTabSTE.c ioMemTabTT.c ioMemTabFalcon.c joy.c
-	keymap.c m68000.c main.c midi.c memorySnapShot.c mfp.c nf_scsidrv.c
+	keymap.c m68000.c main.c midi.c memorySnapShot.c mfp.c multidevice.c nf_scsidrv.c
 	ncr5380.c paths.c  psg.c printer.c resolution.c rs232.c reset.c rtc.c
 	scandir.c scc.c scu_vme.c stMemory.c screen.c screenConvert.c screenSnapShot.c
 	shortcut.c sound.c spec512.c statusbar.c str.c tos.c utils.c
@@ -222,6 +222,9 @@ if(SDL2_OTHER_CFLAGS)
 endif(SDL2_OTHER_CFLAGS)
 
 target_link_libraries(${APP_NAME} Falcon UaeCpu GuiSdl Floppy Debug ${SDL2_LIBRARIES})
+
+# SidecarTridge Multi-device firmware is loaded with dlopen()
+target_link_libraries(${APP_NAME} ${CMAKE_DL_LIBS})
 
 if(Math_FOUND AND NOT APPLE)
 	target_link_libraries(${APP_NAME} ${MATH_LIBRARY})

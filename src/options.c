@@ -22,6 +22,7 @@ const char Options_fileid[] = "Hatari options.c";
 #include "main.h"
 #include "version.h"
 #include "options.h"
+#include "multidevice.h"
 #include "configuration.h"
 #include "console.h"
 #include "control.h"
@@ -173,6 +174,11 @@ enum {
 	OPT_TOS,		/* ROM options */
 	OPT_PATCHTOS,
 	OPT_CARTRIDGE,
+
+	OPT_MD_FIRMWARE,	/* SidecarTridge Multi-device options */
+	OPT_MD_SD,
+	OPT_MD_OPTION,
+	OPT_MD_VERBOSE,
 
 	OPT_CPULEVEL,		/* CPU options */
 	OPT_CPUCLOCK,
@@ -445,6 +451,16 @@ static const opt_t HatariOptions[] = {
 	{ OPT_CARTRIDGE, NULL, "--cartridge",
 	  "<file>", "Use ROM cartridge image <file>" },
 
+	{ OPT_HEADER, NULL, NULL, NULL, "SidecarTridge Multi-device" },
+	{ OPT_MD_FIRMWARE, NULL, "--md-firmware",
+	  "<file>", "Run Multi-device firmware <file> (.mdfw) on the cartridge port" },
+	{ OPT_MD_SD, NULL, "--md-sd",
+	  "<dir>", "Use <dir> as the Multi-device's microSD card" },
+	{ OPT_MD_OPTION, NULL, "--md-option",
+	  "<key=value>", "Pass an option to the Multi-device firmware (repeatable, 'none' clears)" },
+	{ OPT_MD_VERBOSE, NULL, "--md-verbose",
+	  "<bool>", "Show the Multi-device firmware's debug output" },
+
 	{ OPT_HEADER, NULL, NULL, NULL, "CPU/FPU/bus" },
 	{ OPT_CPULEVEL,  NULL, "--cpulevel",
 	  "<x>", "Set the CPU type (x => 680x0) (EmuTOS/TOS 2.06 only!)" },
@@ -662,7 +678,7 @@ static void Opt_ShowHelp(void)
 	const opt_t *opt = HatariOptions;
 
 	Opt_ShowVersion();
-	printf("Usage:\n hatari [options] [directory|disk image|Atari program]\n");
+	printf("Usage:\n hatari [options] [directory|disk image|Atari program|Multi-device firmware]\n");
 
 	while(opt->id != OPT_ERROR)
 	{
@@ -988,6 +1004,31 @@ static bool Opt_StrCpy(int optid, fs_check_t check, char *dst, const char *src, 
 
 
 /**
+ * Add a --md-option key=value pair; "none" clears them all. Pairs are
+ * kept separated by ';', which the config file can hold.
+ */
+static bool Opt_AddMultiDeviceOption(const char *pair)
+{
+	char *opts = ConfigureParams.MultiDevice.szOptions;
+	size_t len = strlen(opts);
+
+	if (strcasecmp(pair, "none") == 0)
+	{
+		opts[0] = '\0';
+		return true;
+	}
+	if (strchr(pair, ';') || !pair[0])
+		return Opt_ShowError(OPT_MD_OPTION, pair, "Must be key=value, without ';'");
+	if (len + strlen(pair) + 2 > sizeof(ConfigureParams.MultiDevice.szOptions))
+		return Opt_ShowError(OPT_MD_OPTION, pair, "Too many Multi-device options");
+	if (len)
+		strcat(opts, ";");
+	strcat(opts, pair);
+	return true;
+}
+
+
+/**
  * Do final validation for the earlier + parsed options
  *
  * Return false if they fail validation.
@@ -1035,6 +1076,16 @@ bool Opt_IsAtariProgram(const char *path)
 static bool Opt_HandleArgument(const char *path)
 {
 	char *dir = NULL;
+
+	/* SidecarTridge Multi-device firmware (.mdfw)? */
+	if (MultiDevice_IsFirmwareFile(path) && File_Exists(path))
+	{
+		Log_Printf(LOG_DEBUG, "ARG = Multi-device firmware: %s\n", path);
+		bLoadAutoSave = false;
+		return Opt_StrCpy(OPT_MD_FIRMWARE, CHECK_FILE, ConfigureParams.MultiDevice.szFirmwareFileName,
+				  path, sizeof(ConfigureParams.MultiDevice.szFirmwareFileName),
+				  &ConfigureParams.MultiDevice.bEnabled);
+	}
 
 	/* Atari program? */
 	if (Opt_IsAtariProgram(path))
@@ -1101,7 +1152,7 @@ static bool Opt_HandleArgument(const char *path)
 		return true;
 	}
 
-	return Opt_ShowError(OPT_ERROR, path, "Not a disk image, Atari program or directory");
+	return Opt_ShowError(OPT_ERROR, path, "Not a disk image, Atari program, directory or Multi-device firmware");
 }
 
 /**
@@ -1840,6 +1891,34 @@ bool Opt_ParseParameters(int argc, const char * const argv[])
 			{
 				bLoadAutoSave = false;
 			}
+			break;
+
+		/* SidecarTridge Multi-device options */
+		case OPT_MD_FIRMWARE:
+			i += 1;
+			ok = Opt_StrCpy(OPT_MD_FIRMWARE, CHECK_FILE, ConfigureParams.MultiDevice.szFirmwareFileName,
+					argv[i], sizeof(ConfigureParams.MultiDevice.szFirmwareFileName),
+					&ConfigureParams.MultiDevice.bEnabled);
+			if (ok)
+			{
+				bLoadAutoSave = false;
+			}
+			break;
+
+		case OPT_MD_SD:
+			i += 1;
+			ok = Opt_StrCpy(OPT_MD_SD, CHECK_DIR, ConfigureParams.MultiDevice.szSdCardDirectory,
+					argv[i], sizeof(ConfigureParams.MultiDevice.szSdCardDirectory),
+					NULL);
+			break;
+
+		case OPT_MD_OPTION:
+			i += 1;
+			ok = Opt_AddMultiDeviceOption(argv[i]);
+			break;
+
+		case OPT_MD_VERBOSE:
+			ok = Opt_Bool(argv[++i], OPT_MD_VERBOSE, &ConfigureParams.MultiDevice.bVerbose);
 			break;
 
 		case OPT_MEMSTATE:

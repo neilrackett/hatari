@@ -29,6 +29,7 @@ const char Reset_fileid[] = "Hatari reset.c";
 #include "blitter.h"
 #include "psg.h"
 #include "reset.h"
+#include "multidevice.h"
 #include "scc.h"
 #include "screen.h"
 #include "scu_vme.h"
@@ -52,6 +53,9 @@ static int Reset_ST(bool bCold)
 {
 	/* Ensure MMU has default values before calling memory_init() later */
 	STMemory_Reset ( bCold );
+
+	/* A cold reset powers the SidecarTridge Multi-device off and on */
+	MultiDevice_Reset ( bCold );
 
 	if (bCold)
 	{

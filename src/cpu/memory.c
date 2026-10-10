@@ -30,6 +30,7 @@ const char Memory_fileid[] = "Hatari memory.c";
 #include "video.h"
 
 #include "newcpu.h"
+#include "multidevice.h"
 
 
 /* Set illegal_mem to 1 for debug output: */
@@ -1191,6 +1192,81 @@ static addrbank TTmem_bank =
     TTmem_lget, TTmem_wget, ABFLAG_RAM | ABFLAG_DIRECTACCESS	/* NP TODO : use ABFLAG_RAM_TT for non DMA RAM */
 };
 
+/* SidecarTridge Multi-device on the cartridge port: ROM4 ($FA0000-$FAFFFF)
+ * reads come from the firmware's window, ROM3 ($FB0000-$FBFFFF) reads are
+ * handed to it as commands (multidevice.c). When Hatari's own cartridge
+ * program is needed (GEMDOS drive, VDI modes), it keeps the first 1 KB. */
+#define MDEV_HATARI_CART_END 0xfa0400
+static bool MDEV_KeepHatariCart;
+static uae_u8 MDEV_Shadow[0x10000];
+
+static bool MDEV_IsHatariCart(uaecptr addr)
+{
+	return MDEV_KeepHatariCart && addr < MDEV_HATARI_CART_END;
+}
+
+static uae_u32 REGPARAM3 MDEVmem_wget(uaecptr addr)
+{
+	addr &= 0xffffff;
+	if (MDEV_IsHatariCart(addr))
+		return ROMmem_wget(addr);
+	if (addr < 0xfb0000)
+		return MultiDevice_Rom4Read(addr - 0xfa0000);
+	MultiDevice_Rom3Read(addr - 0xfb0000);
+	return 0xffff;			/* the Multi-device does not drive ROM3 reads */
+}
+
+static uae_u32 REGPARAM3 MDEVmem_lget(uaecptr addr)
+{
+	return (MDEVmem_wget(addr) << 16) | MDEVmem_wget(addr + 2);
+}
+
+static uae_u32 REGPARAM3 MDEVmem_bget(uaecptr addr)
+{
+	addr &= 0xffffff;
+	if (MDEV_IsHatariCart(addr))
+		return ROMmem_bget(addr);
+	if (addr < 0xfb0000)
+	{
+		uae_u32 w = MultiDevice_Rom4Read((addr & ~1) - 0xfa0000);
+		return (addr & 1) ? (w & 0xff) : (w >> 8);
+	}
+	MultiDevice_Rom3Read(addr - 0xfb0000);
+	return 0xff;
+}
+
+static int REGPARAM3 MDEVmem_check(uaecptr addr, uae_u32 size)
+{
+	addr &= 0xffffff;
+	if (MDEV_IsHatariCart(addr))
+		return ROMmem_check(addr, size);
+	return addr + size <= 0xfc0000;
+}
+
+/* Direct pointers (the debugger, DMA) see a snapshot of ROM4. */
+static uae_u8 * REGPARAM3 MDEVmem_xlate(uaecptr addr)
+{
+	int i;
+	addr &= 0xffffff;
+	if (MDEV_IsHatariCart(addr) || addr >= 0xfb0000)
+		return ROMmem_xlate(addr);
+	for (i = 0; i < 0x10000; i += 2)
+	{
+		uae_u32 w = MultiDevice_Rom4Read(i);
+		MDEV_Shadow[i] = w >> 8;
+		MDEV_Shadow[i + 1] = w & 0xff;
+	}
+	return MDEV_Shadow + (addr - 0xfa0000);
+}
+
+static addrbank MDEVmem_bank =
+{
+    MDEVmem_lget, MDEVmem_wget, MDEVmem_bget,
+    ROMmem_lput, ROMmem_wput, ROMmem_bput,
+    MDEVmem_xlate, MDEVmem_check, NULL, "md_mem" , "Multi-device cartridge",
+    MDEVmem_lget, MDEVmem_wget, ABFLAG_ROM
+};
+
 static addrbank ROMmem_bank =
 {
     ROMmem_lget, ROMmem_wget, ROMmem_bget,
@@ -1794,6 +1870,18 @@ void memory_init(uae_u32 NewSTMemSize, uae_u32 NewTTMemSize, uae_u32 NewRomMemSt
 	ROMmem_bank.mask = ROMmem_mask;
 	ROMmem_bank.start = ROMmem_start;
 	init_bank ( &ROMmem_bank , ROMmem_size );
+
+	/* SidecarTridge Multi-device firmware on the cartridge port */
+	if (MultiDevice_IsActive())
+	{
+		MDEV_KeepHatariCart = MultiDevice_KeepsHatariCartridge();
+		/* Hatari writes its cartridge program's variables (the old GEMDOS
+		 * vector) through baseaddr, so that stays the real cartridge ROM. */
+		MDEVmem_bank.baseaddr = ROMmemory;
+		MDEVmem_bank.mask = ROMmem_mask;
+		MDEVmem_bank.start = ROMmem_start;
+		map_banks_ce(&MDEVmem_bank, 0xFA0000 >> 16, 0x2, 0, CE_MEMBANK_FAST16, CE_MEMBANK_NOT_CACHABLE);
+	}
 
 	/* IO memory: */
 	map_banks_ce(&IOmem_bank, IOmem_start>>16, 0x1, 0, CE_MEMBANK_FAST16, CE_MEMBANK_NOT_CACHABLE);	/* [NP] tested on real STF, no bus wait for IO memory */

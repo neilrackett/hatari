@@ -484,6 +484,17 @@ static const struct Config_Tag configs_Rom[] =
 	{ NULL , Error_Tag, NULL }
 };
 
+/* Used to load/save SidecarTridge Multi-device options */
+static const struct Config_Tag configs_MultiDevice[] =
+{
+	{ "bEnabled", Bool_Tag, &ConfigureParams.MultiDevice.bEnabled },
+	{ "szFirmwareFileName", String_Tag, ConfigureParams.MultiDevice.szFirmwareFileName },
+	{ "szSdCardDirectory", String_Tag, ConfigureParams.MultiDevice.szSdCardDirectory },
+	{ "szOptions", String_Tag, ConfigureParams.MultiDevice.szOptions },
+	{ "bVerbose", Bool_Tag, &ConfigureParams.MultiDevice.bVerbose },
+	{ NULL , Error_Tag, NULL }
+};
+
 /* Used to load/save LILO options, names are same as with Aranym */
 static const struct Config_Tag configs_Lilo[] =
 {
@@ -841,6 +852,13 @@ void Configuration_SetDefault(void)
 	ConfigureParams.Rom.bPatchTos = true;
 	strcpy(ConfigureParams.Rom.szCartridgeImageFileName, "");
 
+	/* Set defaults for SidecarTridge Multi-device */
+	ConfigureParams.MultiDevice.bEnabled = false;
+	ConfigureParams.MultiDevice.bVerbose = false;
+	strcpy(ConfigureParams.MultiDevice.szFirmwareFileName, "");
+	strcpy(ConfigureParams.MultiDevice.szSdCardDirectory, "");
+	strcpy(ConfigureParams.MultiDevice.szOptions, "");
+
 	/* Set defaults for Lilo */
 	strcpy(ConfigureParams.Lilo.szCommandLine,
 	       "root=/dev/ram video=atafb:vga16 load_ramdisk=1");
@@ -997,6 +1015,13 @@ void Configuration_Apply(bool bReset)
 	File_MakeAbsoluteName(ConfigureParams.Rom.szTosImageFileName);
 	if (strlen(ConfigureParams.Rom.szCartridgeImageFileName) > 0)
 		File_MakeAbsoluteName(ConfigureParams.Rom.szCartridgeImageFileName);
+	if (strlen(ConfigureParams.MultiDevice.szFirmwareFileName) > 0)
+		File_MakeAbsoluteName(ConfigureParams.MultiDevice.szFirmwareFileName);
+	if (strlen(ConfigureParams.MultiDevice.szSdCardDirectory) > 0)
+	{
+		File_CleanFileName(ConfigureParams.MultiDevice.szSdCardDirectory);
+		File_MakeAbsoluteName(ConfigureParams.MultiDevice.szSdCardDirectory);
+	}
 	if (strlen(ConfigureParams.Lilo.szKernelFileName) > 0)
 		File_MakeAbsoluteName(ConfigureParams.Lilo.szKernelFileName);
 	if (strlen(ConfigureParams.Lilo.szKernelSymbols) > 0)
@@ -1147,6 +1172,7 @@ void Configuration_Load(const char *psFileName)
 	Configuration_LoadSection(psFileName, configs_Scsi, "[SCSI]");
 	Configuration_LoadSection(psFileName, configs_Ide, "[IDE]");
 	Configuration_LoadSection(psFileName, configs_Rom, "[ROM]");
+	Configuration_LoadSection(psFileName, configs_MultiDevice, "[MultiDevice]");
 	Configuration_LoadSection(psFileName, configs_Lilo, "[LILO]");
 	Configuration_LoadSection(psFileName, configs_Rs232, "[RS232]");
 	Configuration_LoadSection(psFileName, configs_Printer, "[Printer]");
@@ -1210,6 +1236,7 @@ void Configuration_Save(void)
 	Configuration_SaveSection(sConfigFileName, configs_Scsi, "[SCSI]");
 	Configuration_SaveSection(sConfigFileName, configs_Ide, "[IDE]");
 	Configuration_SaveSection(sConfigFileName, configs_Rom, "[ROM]");
+	Configuration_SaveSection(sConfigFileName, configs_MultiDevice, "[MultiDevice]");
 	Configuration_SaveSection(sConfigFileName, configs_Lilo, "[LILO]");
 	Configuration_SaveSection(sConfigFileName, configs_Rs232, "[RS232]");
 	Configuration_SaveSection(sConfigFileName, configs_Printer, "[Printer]");

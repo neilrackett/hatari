@@ -454,6 +454,7 @@ const char Video_fileid[] = "Hatari video.c";
 #include "stMemory.h"
 #include "vdi.h"
 #include "video.h"
+#include "multidevice.h"
 #include "ymFormat.h"
 #include "falcon/videl.h"
 #include "blitter.h"
@@ -5049,6 +5050,8 @@ void Video_InterruptHandler_VBL ( void )
 	/* try to access it to process the VBL interrupt and read the vector's address (especially when using MMU)) */
 	if ( quit_program == 0 )
 		M68000_Exception(EXCEPTION_NR_VBLANK, M68000_EXC_SRC_AUTOVEC);	/* Vertical blank interrupt, level 4 */
+
+	MultiDevice_VBL();			/* let the Multi-device firmware run */
 
 	Main_WaitOnVbl();
 }
