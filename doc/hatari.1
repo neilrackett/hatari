@@ -498,7 +498,9 @@ Use 24-bit instead of 32-bit addressing mode
 (24-bit is enabled by default)
 .TP
 .B \-\-fpu <x>
-FPU type (x=none/68881/68882/internal)
+FPU type (x=none/68881/68882/internal). With a 68000 or 68010 CPU on an
+ST or STE machine, a 68881/68882 is memory-mapped at $FFFA40, as on
+Atari's SFP-004 card or in the Mega STE FPU socket
 .TP
 .B \-\-fpu-softfloat <bool>
 Use full software FPU emulation (Softfloat library)

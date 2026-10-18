@@ -52,6 +52,7 @@ const char Statusbar_fileid[] = "Hatari statusbar.c";
 #include "blitter.h"
 #include "str.h"
 #include "lilo.h"
+#include "sfp004.h"
 
 #define DEBUG 0
 #if DEBUG
@@ -567,7 +568,11 @@ void Statusbar_UpdateInfo(void)
 	default:
 		*end++ = '-';
 	}
-	if (ConfigureParams.System.bSoftFloatFPU && ConfigureParams.System.n_FPUType != FPU_NONE)
+	if (Sfp004_IsEnabled())
+	{
+		end = Statusbar_AddString(end, "(SFP-004)");
+	}
+	else if (ConfigureParams.System.bSoftFloatFPU && ConfigureParams.System.n_FPUType != FPU_NONE)
 	{
 		end = Statusbar_AddString(end, "(SF)");
 	}

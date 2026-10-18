@@ -42,6 +42,7 @@ const char IoMem_fileid[] = "Hatari ioMem.c";
 #include "scc.h"
 #include "fdc.h"
 #include "scu_vme.h"
+#include "sfp004.h"
 
 
 #define	IO_MEM_INTERCEPT_START		0xff8000
@@ -368,6 +369,9 @@ void IoMem_Init(void)
 	{
 		IoMem_SetBusErrorRegion(0xff8a00, 0xff8a3f);
 	}
+
+	/* SFP-004 card or Mega STE FPU socket */
+	Sfp004_InterceptIoMem();
 
 	/* Disable real time clock on non-Mega machines */
 	if (ConfigureParams.System.nMachineType == MACHINE_ST

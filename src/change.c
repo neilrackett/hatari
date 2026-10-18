@@ -353,14 +353,17 @@ void Change_CopyChangedParamsToConfiguration(CNF_PARAMS *current, CNF_PARAMS *ch
 	if (bReInitIDEEmu)
 		Ide_UnInit();
 
-	/* Did change blitter, DSP or system type? */
+	/* Did change blitter, DSP, system type, or CPU or FPU type (for
+	 * the memory-mapped FPU of a 68000)? */
 	if (changed->System.bBlitter != current->System.bBlitter
 #if ENABLE_DSP_EMU
 	    || changed->System.nDSPType != current->System.nDSPType
 #endif
+	    || changed->System.nCpuLevel != current->System.nCpuLevel
+	    || changed->System.n_FPUType != current->System.n_FPUType
 	    || changed->System.nMachineType != current->System.nMachineType)
 	{
-		Dprintf("- blitter/dsp/machine>\n");
+		Dprintf("- blitter/dsp/cpu/fpu/machine>\n");
 		IoMem_UnInit(current->System.nMachineType);
 		bReInitIoMem = true;
 	}

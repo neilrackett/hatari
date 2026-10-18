@@ -96,6 +96,7 @@ const char M68000_fileid[] = "Hatari m68000.c";
 #include "cpu/cpummu030.h"
 #include "scc.h"
 #include "scu_vme.h"
+#include "sfp004.h"
 #include "blitter.h"
 #include "ioMem.h"
 
@@ -389,11 +390,16 @@ void M68000_CheckCpuSettings(void)
 		default: fprintf (stderr, "M68000_CheckCpuSettings() : Error, cpu_level %d unknown\n" , ConfigureParams.System.nCpuLevel);
 	}
 
-	/* 68000/010 can't have any FPU */
+	/* 68000/010 have no coprocessor interface: their FPU can only be the
+	 * memory-mapped 68881/68882 of an ST/STE (SFP-004 or Mega STE socket) */
 	if (changed_prefs.cpu_model < 68020 && ConfigureParams.System.n_FPUType != FPU_NONE)
 	{
-		Log_Printf(LOG_WARN, "FPU is not supported in 68000/010 configurations, disabling FPU\n");
-		ConfigureParams.System.n_FPUType = FPU_NONE;
+		if (!Sfp004_IsEnabled())
+		{
+			Log_Printf(LOG_WARN, "68000/010 can only have a memory-mapped "
+			           "68881/68882 FPU on ST/STE machines, disabling FPU\n");
+			ConfigureParams.System.n_FPUType = FPU_NONE;
+		}
 	}
 	/* 68020/030 can't have 'internal' FPU */
 	else if (changed_prefs.cpu_model < 68040 && ConfigureParams.System.n_FPUType == FPU_CPU)
@@ -418,7 +424,7 @@ void M68000_CheckCpuSettings(void)
 	changed_prefs.cpu_cycle_exact = ConfigureParams.System.bCycleExactCpu;
 	changed_prefs.cpu_memory_cycle_exact = ConfigureParams.System.bCycleExactCpu;
 	changed_prefs.address_space_24 = ConfigureParams.System.bAddressSpace24;
-	changed_prefs.fpu_model = ConfigureParams.System.n_FPUType;
+	changed_prefs.fpu_model = Sfp004_IsEnabled() ? 0 : ConfigureParams.System.n_FPUType;
 	changed_prefs.fpu_strict = ConfigureParams.System.bCompatibleFPU;
 	changed_prefs.fpu_mode = ( ConfigureParams.System.bSoftFloatFPU ? 1 : 0 );
 

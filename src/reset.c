@@ -33,6 +33,7 @@ const char Reset_fileid[] = "Hatari reset.c";
 #include "scc.h"
 #include "screen.h"
 #include "scu_vme.h"
+#include "sfp004.h"
 #include "sound.h"
 #include "stMemory.h"
 #include "tos.h"
@@ -107,6 +108,7 @@ static int Reset_ST(bool bCold)
 		MegaSTE_CPU_Cache_Reset();
 
 	Blitter_Reset();			/* Reset Blitter */
+	Sfp004_Reset();				/* Reset memory-mapped FPU */
 	PSG_Reset();                  /* Reset PSG */
 	Sound_Reset();                /* Reset Sound */
 	ACIA_Reset( ACIA_Array );     /* ACIA */

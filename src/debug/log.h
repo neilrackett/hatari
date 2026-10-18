@@ -180,6 +180,8 @@ enum {
 
 	TRACE_BIT_SCU,
 
+	TRACE_BIT_SFP004,
+
 	TRACE_BIT_VIDEL,
 
 	TRACE_BIT_VIDEO_ADDR,
@@ -264,6 +266,8 @@ enum {
 #define TRACE_SCSIDRV            (1ll<<TRACE_BIT_SCSIDRV)
 
 #define TRACE_SCU                (1ll<<TRACE_BIT_SCU)
+
+#define TRACE_SFP004             (1ll<<TRACE_BIT_SFP004)
 
 #define TRACE_VIDEL              (1ll<<TRACE_BIT_VIDEL)
 

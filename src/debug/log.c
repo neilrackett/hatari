@@ -147,6 +147,8 @@ static flagname_t TraceFlags[] = {
 
 	{ TRACE_SCU		 , "scu" },
 
+	{ TRACE_SFP004		 , "sfp004" },
+
 	{ TRACE_OS_VDI  	 , "vdi" },
 
 	{ TRACE_VIDEL  	         , "videl" },
