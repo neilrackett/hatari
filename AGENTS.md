@@ -11,15 +11,16 @@ upstream Hatari's; this file covers only what is different here.
 ## Branches
 
 - `emumd` is the fork's default branch, and the one to work on: Hatari
-  2.6.1 (tag `v2.6.1`) with one commit per added feature.
+  2.6.1 (tag `v2.6.1`) with one commit per added feature, and a few
+  commits picked from upstream's later `main` (see From upstream).
 - `main` mirrors upstream's `main`, updated now and then. Don't commit
   fork features to it.
 - The `upstream` remote is [hatari/hatari](https://github.com/hatari/hatari).
 
 ## What the fork adds
 
-Each of these is a single commit on `emumd`; `git log v2.6.1..emumd` lists
-them, and each message says why.
+Each of these is a single commit on `emumd`, apart from those picked from
+upstream; `git log v2.6.1..emumd` lists them, and each message says why.
 
 ### SidecarTridge Multi-device (EmuMD)
 
@@ -88,6 +89,20 @@ instruction starts on the response read after its command, the FPU stays
 busy for the table's time at 16 MHz while polls read `$8900`, and at
 16 MHz the CPU waits for the bus handshake (`SFP004_BUS_CLOCKS`). It was
 checked against a real Mega STE with a 68882 (see Testing).
+
+### From upstream
+
+Commits from upstream's `main` after 2.6.1, picked with
+`git cherry-pick -x` so that each names the commit it came from. They keep
+their upstream authors and are otherwise as upstream made them. Drop them
+when the fork moves to a Hatari release that has them.
+
+- The Recording dialog: F12's main menu has a Recording button for
+  screenshots, video and sound, which were in the Hatari screen and Sound
+  dialogs before. It's how Hatari builds from upstream's `main` work, so
+  the fork and those don't differ. Upstream's `0e2d8387` and `635813d4`
+  (small refactors it needs), `85871f98` (the dialog), `1bbc2ea9` (a fix)
+  and `f84314ab` (the manual). Code: `src/gui-sdl/dlgRecord.c`.
 
 ## Building
 
