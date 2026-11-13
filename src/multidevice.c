@@ -25,7 +25,6 @@ const char MultiDevice_fileid[] = "Hatari multidevice.c";
 #include "cycles.h"
 #include "file.h"
 #include "log.h"
-#include "m68000.h"
 #include "emumd_plugin.h"
 #include "multidevice.h"
 
@@ -40,13 +39,34 @@ static void MultiDevice_Log(const char *line)
 }
 
 /* Emulated time in microseconds. CyclesGlobalClockCounter counts CPU
- * cycles at the machine's base clock (8 MHz) whatever the CPU speed. */
+ * cycles at the speed the CPU runs at (8, 16 or 32 MHz, as video.c's
+ * conversions show), which is CPU_Freq_Emul: a TT counts at 32 MHz, a
+ * Falcon and a Mega STE at 16 once switched up. Dividing by the 8 MHz
+ * base instead ran the firmware's clock four times fast on a TT and
+ * twice on a Falcon. The speed can change while running (a Mega STE's
+ * TOS switches to 16 MHz), so the time carries on from where it had got
+ * to rather than being worked out again from the whole count, which
+ * would send it backwards; the cycles between a change and the next
+ * call are taken at the old speed, an error of well under a VBL. */
+static uint64_t nNowBaseUs;
+static uint64_t nNowBaseCycles;
+static uint32_t nNowFreq;
+
 static uint64_t MultiDevice_NowUs(void)
 {
-	uint32_t nFreq = MachineClocks.CPU_Freq_Emul >> nCpuFreqShift;
+	uint32_t nFreq = MachineClocks.CPU_Freq_Emul;
 	if (nFreq == 0)
 		nFreq = 8000000;
-	return CyclesGlobalClockCounter * 1000000ULL / nFreq;
+	if (nFreq != nNowFreq)
+	{
+		if (nNowFreq)
+			nNowBaseUs += (CyclesGlobalClockCounter - nNowBaseCycles)
+			              * 1000000ULL / nNowFreq;
+		nNowBaseCycles = CyclesGlobalClockCounter;
+		nNowFreq = nFreq;
+	}
+	return nNowBaseUs + (CyclesGlobalClockCounter - nNowBaseCycles)
+	       * 1000000ULL / nFreq;
 }
 
 static bool HasExtension(const char *path, const char *ext)
