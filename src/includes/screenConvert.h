@@ -13,6 +13,10 @@ void Screen_SetPaletteColor(Uint8 idx, Uint8 red, Uint8 green, Uint8 blue);
 SDL_Color Screen_GetPaletteColor(Uint8 idx);
 void ScreenConv_MemorySnapShot_Capture(bool bSave);
 
+/* TT per-scanline palette overrides (mid-frame palette changes) */
+void ScreenConv_TTBeginFrame(int height);
+void ScreenConv_TTSetLinePalette(int line, const Uint16 *colors, int count, bool hypermono);
+
 void Screen_GenConvert(uint32_t vaddr, void *fvram, int vw, int vh,
                        int vbpp, int nextline, int hscroll,
                        int leftBorderSize, int rightBorderSize,

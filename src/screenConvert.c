@@ -84,15 +84,124 @@ static void Screen_memset_uint32(Uint32 *addr, Uint32 color, int count)
 	}
 }
 
+/*
+ * TT per-scanline palette.
+ *
+ * The real TT shifter latches the palette registers while it scans out, so a
+ * palette write in the middle of a frame changes the colours from the next
+ * scanline on.  video.c samples the TT palette at each HBL into these tables;
+ * the conversion loops switch to the sampled palette when they reach the line.
+ * Lines without an entry inherit the palette of the previous line, which is
+ * the common case (one palette per frame or a few horizontal bands).
+ */
+#define SCREENCONV_TT_MAX_LINES	480	/* TT low res is 320x480 */
+#define SCREENCONV_TT_COLORS	256
+
+static Uint32 *TTLinePalette;		/* [height][SCREENCONV_TT_COLORS] */
+static Uint8 *TTLinePaletteValid;	/* [height] */
+static int TTLinePaletteHeight;
+
+/* Palette used by the conversion loops for the line being rendered */
+static const Uint32 *ScreenConv_Palette = palette.native;
+
+/**
+ * Prepare the per-scanline TT palette tables for a new frame.
+ * Called once per VBL, before the frame's palette writes are emulated.
+ */
+void ScreenConv_TTBeginFrame(int height)
+{
+	if (height > SCREENCONV_TT_MAX_LINES)
+		height = SCREENCONV_TT_MAX_LINES;
+	if (height < 0)
+		height = 0;
+
+	if (height > TTLinePaletteHeight)
+	{
+		Uint32 *pal = malloc(height * SCREENCONV_TT_COLORS * sizeof(Uint32));
+		Uint8 *valid = malloc(height * sizeof(Uint8));
+
+		if (pal && valid)
+		{
+			ScreenConv_Palette = palette.native;
+			free(TTLinePalette);
+			free(TTLinePaletteValid);
+			TTLinePalette = pal;
+			TTLinePaletteValid = valid;
+			TTLinePaletteHeight = height;
+		}
+		else
+		{
+			free(pal);
+			free(valid);
+			height = TTLinePaletteHeight;
+		}
+	}
+
+	if (TTLinePalette && TTLinePaletteValid)
+		memset(TTLinePaletteValid, 0, height * sizeof(Uint8));
+	TTLinePaletteHeight = height;
+}
+
+/**
+ * Store the host palette for one TT scanline.  colors[] contains the TT
+ * 0x0RGB words in renderer index order (already selected for the palette
+ * bank / duochrome mode by video.c).
+ */
+void ScreenConv_TTSetLinePalette(int line, const Uint16 *colors, int count, bool hypermono)
+{
+	Uint32 *dst;
+	int i;
+
+	if (!TTLinePalette || line < 0 || line >= TTLinePaletteHeight)
+		return;
+	if (count > SCREENCONV_TT_COLORS)
+		count = SCREENCONV_TT_COLORS;
+
+	dst = TTLinePalette + line * SCREENCONV_TT_COLORS;
+	for (i = 0; i < count; i++)
+	{
+		Uint8 r, g, b;
+		Uint16 color = colors[i];
+
+		if (hypermono)
+		{
+			r = g = b = color & 0xff;
+		}
+		else
+		{
+			r = (color >> 8) & 0x0f;
+			g = (color >> 4) & 0x0f;
+			b = color & 0x0f;
+			r |= r << 4;
+			g |= g << 4;
+			b |= b << 4;
+		}
+		dst[i] = SDL_MapRGB(sdlscrn->format, r, g, b);
+	}
+	TTLinePaletteValid[line] = 1;
+}
+
+/**
+ * Return the host palette to use for a TT source scanline.  Lines without a
+ * recorded change keep the palette of the previous line.
+ */
+static inline const Uint32 *ScreenConv_GetLinePalette(int line, const Uint32 *prev)
+{
+	if (Config_IsMachineTT() && TTLinePalette && TTLinePaletteValid
+	    && line >= 0 && line < TTLinePaletteHeight && TTLinePaletteValid[line])
+		return TTLinePalette + line * SCREENCONV_TT_COLORS;
+	return prev;
+}
+
 static inline Uint32 idx2pal(Uint8 idx)
 {
 	if (unlikely(bTTSampleHold))
 	{
 		if (idx == 0)
-			return palette.native[nSampleHoldIdx];
+			return ScreenConv_Palette[nSampleHoldIdx];
 		nSampleHoldIdx = idx;
 	}
-	return palette.native[idx];
+	return ScreenConv_Palette[idx];
 }
 
 
@@ -236,6 +345,7 @@ static void ScreenConv_BitplaneTo32bppNoZoom(Uint16 *fvram_line, Uint8 *hvram,
 {
 	Uint32 *hvram_line = (Uint32 *)hvram;
 	uint32_t nLineEndAddr = nScreenBaseAddr + nextline * 2;
+	const Uint32 *linepal = palette.native;
 	int pitch = sdlscrn->pitch >> 2;
 	int h;
 
@@ -251,9 +361,12 @@ static void ScreenConv_BitplaneTo32bppNoZoom(Uint16 *fvram_line, Uint8 *hvram,
 	{
 		Uint32 *hvram_column = hvram_line;
 
+		linepal = ScreenConv_GetLinePalette(h, linepal);
+		ScreenConv_Palette = linepal;
+
 		if (nLineEndAddr > STRamEnd)
 		{
-			Screen_memset_uint32(hvram_line, palette.native[0], pitch);
+			Screen_memset_uint32(hvram_line, linepal[0], pitch);
 			hvram_line += pitch;
 			continue;
 		}
@@ -261,14 +374,14 @@ static void ScreenConv_BitplaneTo32bppNoZoom(Uint16 *fvram_line, Uint8 *hvram,
 		nSampleHoldIdx = 0;
 
 		/* Left border first */
-		Screen_memset_uint32(hvram_column, palette.native[0], leftBorder);
+		Screen_memset_uint32(hvram_column, linepal[0], leftBorder);
 		hvram_column += leftBorder;
 
 		hvram_column = ScreenConv_BitplaneLineTo32bpp(fvram_line, hvram_column,
 		                                              vw, vbpp, hscrolloffset);
 
 		/* Right border */
-		Screen_memset_uint32(hvram_column, palette.native[0], rightBorder);
+		Screen_memset_uint32(hvram_column, linepal[0], rightBorder);
 
 		nLineEndAddr += nextline * 2;
 		fvram_line += nextline;
@@ -446,6 +559,7 @@ static void ScreenConv_BitplaneTo32bppZoomed(Uint16 *fvram, Uint8 *hvram,
 	uint32_t nLineEndAddr = nScreenBaseAddr + nextline * 2;
 	unsigned int nBytesPerPixel = sdlscrn->format->BytesPerPixel;
 	int pitch = sdlscrn->pitch >> 2;
+	const Uint32 *linepal = palette.native;
 	int cursrcline = -1;
 	int scrIdx = 0;
 	int w, h;
@@ -460,9 +574,13 @@ static void ScreenConv_BitplaneTo32bppZoomed(Uint16 *fvram, Uint8 *hvram,
 	/* Render the graphical area */
 	for (h = 0; h < scrheight; h++)
 	{
+		int srcline = screen_zoom.zoomytable[h];
+
 		fvram_line = fvram + (screen_zoom.zoomytable[scrIdx] * nextline);
 		scrIdx ++;
 		nSampleHoldIdx = 0;
+		linepal = ScreenConv_GetLinePalette(srcline, linepal);
+		ScreenConv_Palette = linepal;
 
 		/* Recopy the same line ? */
 		if (screen_zoom.zoomytable[h] == cursrcline)
@@ -471,7 +589,7 @@ static void ScreenConv_BitplaneTo32bppZoomed(Uint16 *fvram, Uint8 *hvram,
 		}
 		else if (nLineEndAddr > STRamEnd)
 		{
-			Screen_memset_uint32(hvram_line, palette.native[0], pitch);
+			Screen_memset_uint32(hvram_line, linepal[0], pitch);
 		}
 		else
 		{
@@ -480,7 +598,7 @@ static void ScreenConv_BitplaneTo32bppZoomed(Uint16 *fvram, Uint8 *hvram,
 
 			hvram_column = hvram_line;
 			/* Display the Left border */
-			Screen_memset_uint32(hvram_column, palette.native[0], leftBorder * coefx);
+			Screen_memset_uint32(hvram_column, linepal[0], leftBorder * coefx);
 			hvram_column += leftBorder * coefx;
 
 			/* Display the Graphical area */
@@ -491,7 +609,7 @@ static void ScreenConv_BitplaneTo32bppZoomed(Uint16 *fvram, Uint8 *hvram,
 			hvram_column += vw * coefx;
 
 			/* Display the Right border */
-			Screen_memset_uint32(hvram_column, palette.native[0], rightBorder * coefx);
+			Screen_memset_uint32(hvram_column, linepal[0], rightBorder * coefx);
 
 			nLineEndAddr += nextline * 2;
 		}
@@ -691,6 +809,7 @@ void Screen_GenConvert(uint32_t vaddr, void *fvram, int vw, int vh,
                        int upperBorderSize, int lowerBorderSize)
 {
 	nScreenBaseAddr = vaddr;
+	ScreenConv_Palette = palette.native;
 	ConvertW = vw;
 	ConvertH = vh;
 	ConvertBPP = vbpp;
