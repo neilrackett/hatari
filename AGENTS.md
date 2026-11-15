@@ -90,6 +90,22 @@ busy for the table's time at 16 MHz while polls read `$8900`, and at
 16 MHz the CPU waits for the bus handshake (`SFP004_BUS_CLOCKS`). It was
 checked against a real Mega STE with a 68882 (see Testing).
 
+### TT palette changes mid-frame
+
+Upstream converts a TT's picture with the palette as it is at the VBL, so
+rasters (a Timer B or HBL handler changing colours down the screen) show
+as one colour. Here each palette write is recorded at the beam's line, and
+the picture is converted a line at a time with the palette each line had.
+Ported from Ryan Williams' fork
+([hattari](https://github.com/idontwantyourspamthanks/hattari), commit
+`8673e5be`) to 2.6.1's `src/screenConvert.c`; the commit keeps him as its
+author. Code: `src/video.c` (`Video_TT_RecordPaletteWrite()`, and the
+snapshot in `Video_TT_RasterHBL()`) and `src/screenConvert.c`.
+
+Hatari counts a TT's lines as an ST's, one per line of the picture, so a
+raster program shows here as it would on an ST. That's not evidence of how
+a real TT's Timer B counts its doubled lines.
+
 ### From upstream
 
 Commits from upstream's `main` after 2.6.1, picked with
