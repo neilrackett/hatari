@@ -739,6 +739,13 @@ static void	Video_ColorReg_WriteWord(void);
 static void	Video_ColorReg_ReadWord(void);
 
 static void	Video_TT_RasterHBL(void);
+static int	Video_TT_LinesPerHBL(void);
+static void	Video_TT_TimerBPair(int *First, int *Second);
+static int	Video_TT_PictureLine(int Hbl, int HPos);
+
+/* TT Low and TT Medium: 480 lines, two in each of 240 HBLs from this one */
+#define VIDEO_TT_START_HBL_480	18
+#define VIDEO_TT_HEIGHT_HBL_480	240
 
 
 
@@ -2882,7 +2889,8 @@ Freq_Test_Done:
 	/* Update Timer B's position if DE start/end changed (and this is not an empty 0 byte line) */
 	/* In most cases Timer B will count end of line events, but it can also count start of line events */
 	/* (eg 'Seven Gates Of Jambala') so we need to check both start/end values */
-	if ( ( DE_end > 0 )
+	/* (Not in a TT's TT Low or TT Medium, whose two lines an HBL keep their own positions) */
+	if ( ( DE_end > 0 ) && ( Video_TT_LinesPerHBL () == 1 )
 	    && ( ( ShifterFrame.ShifterLines[ HblCounterVideo ].DisplayStartCycle != DE_start )
 	      || ( ShifterFrame.ShifterLines[ HblCounterVideo ].DisplayEndCycle != DE_end ) ) )
 	{
@@ -3598,6 +3606,8 @@ void Video_InterruptHandler_EndLine(void)
 {
 	int FrameCycles, HblCounterVideo, LineCycles;
 	int PendingCycles = -INT_CONVERT_FROM_INTERNAL ( PendingInterruptCount , INT_CPU_CYCLE );
+	int TTLines, HPos = 0, TTFirstPos = 0, TTSecondPos = 0, Delay;
+	bool bTTFirstLine = false, bDE;
 
 #ifdef OLD_GET_POS_FORCE_INC
 if ( CycInt_From_Opcode )		/* TEMP : to update CYCLES_COUNTER_VIDEO during an opcode */
@@ -3618,8 +3628,30 @@ if ( CycInt_From_Opcode )		/* TEMP : to update CYCLES_COUNTER_VIDEO during an op
 	if (bUseVDIRes)
 		return;
 
+	/* In TT Low and TT Medium an HBL has two lines, so two EndLine ints: */
+	/* is this the first one, with the second still to come on this HBL? */
+	TTLines = Video_TT_LinesPerHBL ();
+	if ( TTLines == 2 )
+	{
+		HPos = LineCycles;
+		if ( HblCounterVideo == nHBL+1 )		/* delayed into the next line */
+			HPos += nCyclesPerLine;
+		HPos = VIDEO_CYCLE_TO_HPOS ( HPos );
+		Video_TT_TimerBPair ( &TTFirstPos , &TTSecondPos );
+		bTTFirstLine = ( HPos < ( TTFirstPos + TTSecondPos ) / 2 );
+	}
+
+	if ( bTTFirstLine )
+	{
+		/* The second line's EndLine, on the same HBL */
+		Delay = ( TTSecondPos << nCpuFreqShift ) - ( HPos << nCpuFreqShift );
+		if ( Delay < 4 )
+			Delay = 4;
+		CycInt_AddRelativeInterrupt ( Delay , INT_CPU_CYCLE, INTERRUPT_VIDEO_ENDLINE );
+	}
+
 	/* Generate new Endline, if need to - there are 313 HBLs per frame */
-	if (nHBL < nScanlinesPerFrame-1)
+	else if (nHBL < nScanlinesPerFrame-1)
 	{
 		/* By default, next EndLine's int will be on line nHBL+1 at pos 376+24 or 372+24 */
 		if ( ( IoMem[0xfffa03] & ( 1 << 3 ) ) == 0 )		/* count end of line */
@@ -3640,6 +3672,9 @@ if ( CycInt_From_Opcode )		/* TEMP : to update CYCLES_COUNTER_VIDEO during an op
 			LineTimerBPos = Video_TimerB_GetDefaultPos ();
 		}
 
+		if ( TTLines == 2 )					/* the first of the next HBL's two lines */
+			LineTimerBPos = TTFirstPos;
+
 		// TODO : use Video_AddInterruptTimerB
 //fprintf ( stderr , "new tb %d %d %d\n" , LineTimerBPos , nCyclesPerLine , (LineTimerBPos<<nCpuFreqShift) - LineCycles + nCyclesPerLine );
 		LineTimerBPos <<= nCpuFreqShift;			/* convert Pos at 8 MHz into number of cycles at 8/16/32 MHz */
@@ -3648,7 +3683,13 @@ if ( CycInt_From_Opcode )		/* TEMP : to update CYCLES_COUNTER_VIDEO during an op
 	}
 
 	/* Timer B occurs at END of first visible screen line in Event Count mode */
-	if ( ( nHBL >= nStartHBL ) && ( nHBL < nEndHBL + BlankLines ) && ( ( VerticalOverscan & V_OVERSCAN_NO_DE ) == 0 ) )
+	if ( TTLines == 2 )						/* TT Low, TT Medium: 480 lines */
+		bDE = ( nHBL >= VIDEO_TT_START_HBL_480 )
+			&& ( nHBL < VIDEO_TT_START_HBL_480 + VIDEO_TT_HEIGHT_HBL_480 );
+	else
+		bDE = ( nHBL >= nStartHBL ) && ( nHBL < nEndHBL + BlankLines )
+			&& ( ( VerticalOverscan & V_OVERSCAN_NO_DE ) == 0 );
+	if ( bDE )
 	{
 		/* Handle Timer B when using Event Count mode */
 		/* We must ensure that the write to fffa1b to activate timer B was */
@@ -4673,6 +4714,88 @@ void Video_GetTTRes(int *width, int *height, int *bpp)
 }
 
 
+/*-----------------------------------------------------------------------*/
+/**
+ * A TT shows TT Low and TT Medium at VGA's line rate, about twice an ST's:
+ * 480 lines a frame, each a Display Enable event for Timer B. A real TT
+ * counted 478-480 events a frame in TT Low, and 199-200 in ST Low and ST
+ * Medium, whose lines its monitor draws twice but Timer B counts once.
+ * Hatari keeps the ST's frame of HBLs, so in those two modes each HBL
+ * carries two of the TT's lines, 240 HBLs from VIDEO_TT_START_HBL_480 (as
+ * VGA's 525 lines, 480 shown, would fall in 263). Every other mode has a
+ * line an HBL, as an ST.
+ */
+static int Video_TT_LinesPerHBL(void)
+{
+	if ( Config_IsMachineTT() && !bUseVDIRes
+	    && ( TTRes == TT_LOW_RES || TTRes == TT_MEDIUM_RES ) )
+		return 2;
+	return 1;
+}
+
+/**
+ * Half an HBL, in 8 MHz cycles: a TT line in TT Low and TT Medium
+ */
+static int Video_TT_HalfLine(void)
+{
+	return ( nCyclesPerLine >> nCpuFreqShift ) / 2;
+}
+
+/**
+ * In TT Low and TT Medium, the positions (8 MHz) of an HBL's two Timer B
+ * events: the ST's position for the line, and half an HBL before it (after
+ * it when counting start of line events, whose position is early in the HBL)
+ */
+static void Video_TT_TimerBPair(int *First, int *Second)
+{
+	int Pos = Video_TimerB_GetDefaultPos ();
+	int Half = Video_TT_HalfLine ();
+
+	if ( Pos >= Half )
+	{
+		*First = Pos - Half;
+		*Second = Pos;
+	}
+	else
+	{
+		*First = Pos;
+		*Second = Pos + Half;
+	}
+}
+
+/**
+ * The TT picture line a palette write at HBL Hbl, position HPos (8 MHz
+ * cycles) colours: the line on display, or the next one once that line's
+ * display has ended. Timer B's end of line event comes just after that, so
+ * a raster's colour starts on the line after the event, as on an ST.
+ * Negative before the picture, height or more after it.
+ */
+static int Video_TT_PictureLine(int Hbl, int HPos)
+{
+	int End, Line;
+
+	if ( nScreenRefreshRate == VIDEO_71HZ )
+		End = LINE_END_CYCLE_71;
+	else if ( nScreenRefreshRate == VIDEO_50HZ )
+		End = LINE_END_CYCLE_50;
+	else
+		End = LINE_END_CYCLE_60;
+
+	if ( Video_TT_LinesPerHBL() == 2 )
+	{
+		Line = 2 * ( Hbl - VIDEO_TT_START_HBL_480 );
+		if ( HPos >= End - Video_TT_HalfLine() )
+			Line++;
+	}
+	else
+		Line = Hbl - nStartHBL;
+
+	if ( HPos >= End )
+		Line++;
+	return Line;
+}
+
+
 /**
  * Set a TT palette color from a 0x0RGB TT color word
  */
@@ -4806,10 +4929,7 @@ static void Video_TT_RecordPaletteWrite(void)
 	LineCycles = VIDEO_CYCLE_TO_HPOS ( LineCycles );
 	Video_GetTTRes ( &width , &height , &bpp );
 
-	line = HblCounterVideo - nStartHBL;
-	if ( LineCycles >= LINE_END_CYCLE_NO_RIGHT )
-		line++;
-
+	line = Video_TT_PictureLine ( HblCounterVideo , LineCycles );
 	if ( line >= 0 && line < height )
 	{
 		Video_TT_SnapshotPaletteLine ( line , bpp );
@@ -6181,30 +6301,28 @@ static void Video_TT_RasterHBL(void)
 	Video_GetTTRes(&width, &height, &bpp);
 	linebytes = width * bpp / 8;
 
-	if ( nHBL+1 < nStartHBL )
+	/* The picture lines before the next HBL's (two an HBL in TT Low and TT Medium) */
+	lines = Video_TT_PictureLine ( nHBL+1 , 0 );
+
+	if ( lines < 0 )
 	{
 		/* pVideoRaster was set during Video_ClearOnVBL using VideoBase */
 		/* It's already the correct value */
 	}
 	else
 	{
-		lines = nHBL+1 - nStartHBL;
+		if ( lines < height && ( bTTPaletteDirty || lines == 0 ) )
+		{
+			/* The palette as the next line starts: the first line's at the
+			 * end of the VBL and the top border, and any write that
+			 * Video_TT_RecordPaletteWrite could not place */
+			Video_TT_SnapshotPaletteLine(lines, bpp);
+			bTTPaletteDirty = false;
+		}
 		if ( lines >= height )
 			lines = height;
 
 		pVideoRaster = ( ( Video_GetScreenBaseAddr() + lines * linebytes ) & 0xffffff ) + STRam;
-	}
-
-	/* Record the palette for the line that was just scanned out, so mid-frame
-	 * palette writes (Timer B, HBL handlers) only change the following lines. */
-	if ( nHBL >= nStartHBL )
-	{
-		int line = nHBL - nStartHBL;
-		if ( line < height && ( bTTPaletteDirty || line == 0 ) )
-		{
-			Video_TT_SnapshotPaletteLine(line, bpp);
-			bTTPaletteDirty = false;
-		}
 	}
 }
 

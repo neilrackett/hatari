@@ -102,9 +102,32 @@ Ported from Ryan Williams' fork
 author. Code: `src/video.c` (`Video_TT_RecordPaletteWrite()`, and the
 snapshot in `Video_TT_RasterHBL()`) and `src/screenConvert.c`.
 
-Hatari counts a TT's lines as an ST's, one per line of the picture, so a
-raster program shows here as it would on an ST. That's not evidence of how
-a real TT's Timer B counts its doubled lines.
+A write after a line's display has ended colours the next line, as on an
+ST, so a Timer B raster starts on the line after its event.
+
+### A TT's lines, as its Timer B counts them
+
+Upstream times a TT's video as an STE's, so Timer B counts 200 lines a
+frame in every mode. A real TT, counted with a program that counts Timer B
+events (Display Enable) from one VBL to the next, gave:
+
+| Mode      | Events a frame (real TT) | Upstream | Here |
+| --------- | ------------------------ | -------- | ---- |
+| ST Low    | 199-200                  | 200      | 200  |
+| ST Medium | 199-200                  | 200      | 200  |
+| TT Low    | 478-480                  | 200      | 480  |
+
+So a TT counts each line of its own modes, and each picture line of ST Low
+and ST Medium once, though its monitor draws them twice. Here TT Low and
+TT Medium (the same 480-line timing) carry two of their lines in each HBL
+of Hatari's frame, VGA's line rate: 240 HBLs from HBL 18, as VGA's 525
+lines with 480 shown fit in 263. Each line gets its own Timer B event, half
+an HBL apart, and the video counter and the per-line palettes step two
+lines an HBL, so rasters reach the whole 480-line picture. Every other mode
+keeps a line an HBL. ST High on a TT and TT High have not been counted on
+the machine and are as upstream has them. Code: `src/video.c`
+(`Video_TT_LinesPerHBL()`, `Video_InterruptHandler_EndLine()`,
+`Video_TT_PictureLine()`).
 
 ### From upstream
 
